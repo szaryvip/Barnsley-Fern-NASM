@@ -1,0 +1,239 @@
+     1                                  %use fp
+     2                                  section .text
+     3                                  
+     4                                  global generate_fern
+     5                                  ;----------------------------------------------
+     6                                  ; Function generates Barnsley Fern in buffer
+     7                                  ;----------------------------------------------
+     8                                  generate_fern:
+     9                                  ; arguments: rdi = counter, rsi = *image_header, rdx = f1_prob, rcx = f2_prob, r8 = f3_prob
+    10                                  
+    11                                      ;prolog
+    12 00000000 55                      	push	rbp
+    13 00000001 4889E5                  	mov		rbp, rsp
+    14                                  
+    15 00000004 B832CD3200              	mov     rax, 0x32CD32   ; lime green
+    16                                  
+    17 00000009 488B5E12                    mov     rbx, [rsi+18]   ; rbx = width of image
+    18                                  
+    19                                      ;calculate row size
+    20 0000000D 486BDB03                    imul    rbx, 3          
+    21 00000011 4883C303                    add     rbx, 3         
+    22 00000015 83E3FC                      and     ebx, 0xFFFFFFFC ; rbx = (width*3 + 3) & ~3 -- least multiple of four
+    23                                  
+    24                                      ;push arguments to stack
+    25 00000018 56                          push    rsi             ; [rbp-8] = *image_header
+    26 00000019 53                          push    rbx             ; [rbp-16] = row_size
+    27 0000001A 50                          push    rax             ; [rbp-24] = color
+    28 0000001B 57                          push    rdi             ; [rbp-32] = counter
+    29 0000001C 52                          push    rdx             ; [rbp-40] = f1_prob
+    30 0000001D 51                          push    rcx             ; [rbp-48] = f2_prob
+    31 0000001E 4150                        push    r8              ; [rbp-56] = f3_prob
+    32                                  
+    33                                      ;store start point to rdi and rsi
+    34 00000020 BF01000000                  mov     rdi, 1          
+    35 00000025 BE01000000                  mov     rsi, 1
+    36                                  
+    37                                  ;---------------------------------
+    38                                  ;   Coloring pixel (x,y)
+    39                                  ;---------------------------------
+    40                                  color:
+    41                                  ; arguments: rdi: x, rsi = y
+    42                                  
+    43                                      ;move offset to middle of bitmap to generate image on center
+    44 0000002A 488B4DF8                    mov     rcx, [rbp-8]
+    45 0000002E 4831D2                      xor     rdx, rdx
+    46 00000031 4831C0                      xor     rax, rax
+    47 00000034 8B4112                      mov     eax, [rcx+18]
+    48 00000037 48D1E8                      shr     rax, 1
+    49                                  
+    50 0000003A 4989C6                      mov     r14, rax        ;r14 = width/2
+    51                                      
+    52 0000003D 4831D2                      xor     rdx, rdx
+    53 00000040 4831C0                      xor     rax, rax
+    54 00000043 8B4116                      mov     eax, [rcx+22]
+    55 00000046 41BB0A000000                mov     r11, 10
+    56 0000004C 49F7F3                      div     r11
+    57                                  
+    58 0000004F 4889C1                      mov     rcx, rax        ;rcx = hight/10
+    59 00000052 4C89F2                      mov     rdx, r14        ;rdx = width/2
+    60                                  
+    61 00000055 4801FA                      add     rdx, rdi        ; rdx += x
+    62 00000058 4801F1                      add     rcx, rsi        ; rcx += y
+    63                                  
+    64 0000005B 488B5DF0                    mov     rbx, [rbp-16]   ; rbx = row_size
+    65 0000005F 488B45F8                    mov     rax, [rbp-8]    ; rax = *image_header
+    66                                  
+    67 00000063 480FAFD9                    imul    rbx, rcx        ; rbx = row_size * y
+    68                                  
+    69                                      ;column calculation
+    70 00000067 486BD203                    imul    rdx, 3     
+    71 0000006B 4801D3                      add     rbx, rdx       
+    72 0000006E 4801C3                      add     rbx, rax        
+    73 00000071 4883C336                    add     rbx, 54         
+    74                                  
+    75                                      ;copy to memory
+    76 00000075 488B55E8                    mov     rdx, [rbp-24]   ; rdx = color
+    77 00000079 668913                      mov     [rbx], dx       ; store GGBB
+    78 0000007C 48C1EA10                    shr     rdx, 16         ; in rdx now 0x000000RR
+    79 00000080 885302                      mov     [rbx+2], dl     ; store red
+    80                                  
+    81                                  ;--------------------------------------------------------
+    82                                  ;   Choosing function of calculating next x and y 
+    83                                  ;--------------------------------------------------------
+    84                                  random_function:
+    85                                  ; arguments: rdi: x, rsi: y
+    86                                  
+    87 00000083 F2480F2AC7                  cvtsi2sd    xmm0, rdi       ; xmm0 = float(x)
+    88 00000088 F2480F2ACE                  cvtsi2sd    xmm1, rsi       ; xmm1 = float(y)
+    89                                  
+    90                                      ;generate random number from 0 to 99 to rdx
+    91 0000008D 4831D2                      xor     rdx, rdx
+    92 00000090 480FC7F0                    rdrand  rax
+    93 00000094 B964000000              	mov     rcx, 100
+    94 00000099 48F7F1                      div     rcx             
+    95                                  
+    96 0000009C 483B55D8                    cmp     rdx, [rbp-40]
+    97 000000A0 7C3A                        jl      func1
+    98 000000A2 483B55D0                    cmp     rdx, [rbp-48]
+    99 000000A6 0F8CC2000000                jl      func2
+   100 000000AC 483B55C8                    cmp     rdx, [rbp-56]
+   101 000000B0 0F8C4A010000                jl      func3
+   102                                  
+   103                                  func4:
+   104 000000B6 B800000000                  mov     rax, float64(0.0)   ; rax = 0.0
+   105 000000BB 66480F6ED0                  movq    xmm2, rax           ; xmm2 = 0.0
+   106 000000C0 48B87B14AE47E17AC4-         mov     rax, float64(0.16)  ; rax = 0.16
+   106 000000C9 3F                 
+   107 000000CA 66480F6EE0                  movq    xmm4, rax           ; xmm4 = 0.16
+   108 000000CF F30F7ED9                    movq    xmm3, xmm1          ; xmm3 = y
+   109 000000D3 F20F59DC                    mulsd   xmm3, xmm4          ; xmm3 = y * 0.16
+   110                                  
+   111 000000D7 E9B1010000                  jmp     set_new_coords
+   112                                  
+   113                                  func1:
+   114 000000DC 48B8333333333333EB-         mov     rax, float64(0.85)  ; rax = 0.85
+   114 000000E5 3F                 
+   115 000000E6 66480F6ED0                  movq    xmm2, rax           ; xmm2 = 0.85
+   116 000000EB F20F59D0                    mulsd   xmm2, xmm0          ; xmm2 = x*0.85
+   117 000000EF 48B87B14AE47E17AA4-         mov     rax, float64(0.04)  ; rax = 0.04
+   117 000000F8 3F                 
+   118 000000F9 66480F6EE0                  movq    xmm4, rax           ; xmm4 = 0.04
+   119 000000FE F20F59E1                    mulsd   xmm4, xmm1          ; xmm4 = y*0.04
+   120 00000102 F20F58D4                    addsd   xmm2, xmm4          ; xmm2 = x*0.85 + y*0.04
+   121                                  
+   122 00000106 48B87B14AE47E17AA4-         mov     rax, float64(-0.04) ; rax = -0.04
+   122 0000010F BF                 
+   123 00000110 66480F6ED8                  movq    xmm3, rax           ; xmm3 = -0.04
+   124 00000115 F20F59D8                    mulsd   xmm3, xmm0          ; xmm3 = x*-0.04
+   125 00000119 48B8333333333333EB-         mov     rax, float64(0.85)  ; rax = 0.85
+   125 00000122 3F                 
+   126 00000123 66480F6EE0                  movq    xmm4, rax           ; xmm4 = 0.85
+   127 00000128 F20F59E1                    mulsd   xmm4, xmm1          ; xmm4 = y*0.85
+   128 0000012C F20F58DC                    addsd   xmm3, xmm4          ; xmm3 = x*-0.04 + y*0.85
+   129 00000130 488B5DF8                    mov     rbx, [rbp-8]        ; rax = image_header
+   130 00000134 4831C0                      xor     rax, rax            ; rax = 0
+   131 00000137 8B4312                      mov     eax, [rbx+18]       ; eax = width
+   132 0000013A 48B900000000000028-         mov     rcx, float64(12.0)  ; rcx = 12
+   132 00000143 40                 
+   133 00000144 66480F6EF1                  movq    xmm6, rcx           ; xmm6 = 12
+   134 00000149 F2480F2AE8                  cvtsi2sd    xmm5, rax       ; xmm5 = width
+   135 0000014E F20F5EEE                    divsd   xmm5, xmm6          ; xmm5 = width/12
+   136 00000152 48BA9A9999999999F9-         mov     rdx, float64(1.6)   ; rdx = 1.6
+   136 0000015B 3F                 
+   137 0000015C 66480F6EE2                  movq    xmm4, rdx           ; xmm4 = 1.6
+   138 00000161 F20F59E5                    mulsd   xmm4, xmm5          ; xmm4 = 1.6 * width/12
+   139 00000165 F20F58DC                    addsd   xmm3, xmm4          ; xmm3 = x*-0.04 + y*0.85 + 1.6 * width/12
+   140                                  
+   141 00000169 E91F010000                  jmp     set_new_coords
+   142                                  
+   143                                  func2:
+   144 0000016E 48B8333333333333C3-         mov     rax, float64(-0.15) ; rax = -0.15
+   144 00000177 BF                 
+   145 00000178 66480F6ED0                  movq    xmm2, rax           ; xmm2 = -0.15
+   146 0000017D F20F59D0                    mulsd   xmm2, xmm0          ; xmm2 = x*-0.15
+   147 00000181 48B8EC51B81E85EBD1-         mov     rax, float64(0.28)  ; rax = 0.28
+   147 0000018A 3F                 
+   148 0000018B 66480F6EE0                  movq    xmm4, rax           ; xmm4 = 0.28
+   149 00000190 F20F59E1                    mulsd   xmm4, xmm1          ; xmm4 = y*0.28
+   150 00000194 F20F58D4                    addsd   xmm2, xmm4          ; xmm2 = x*-0.15 + y*0.28
+   151                                  
+   152 00000198 48B8A4703D0AD7A3D0-         mov     rax, float64(0.26)  ; rax = 0.26
+   152 000001A1 3F                 
+   153 000001A2 66480F6ED8                  movq    xmm3, rax           ; xmm3 = 0.26
+   154 000001A7 F20F59D8                    mulsd   xmm3, xmm0          ; xmm3 = x*0.26
+   155 000001AB 48B8B81E85EB51B8CE-         mov     rax, float64(0.24)  ; rax = 0.24
+   155 000001B4 3F                 
+   156 000001B5 66480F6EE0                  movq    xmm4, rax           ; xmm4 = 0.24
+   157 000001BA F20F59E1                    mulsd   xmm4, xmm1          ; xmm4 = y*0.24
+   158 000001BE F20F58DC                    addsd   xmm3, xmm4          ; xmm3 = x*0.26 + y*0.24
+   159 000001C2 488B5DF8                    mov     rbx, [rbp-8]        ; rax = image_header
+   160 000001C6 4831C0                      xor     rax, rax            ; rax = 0
+   161 000001C9 8B4312                      mov     eax, [rbx+18]       ; eax = width
+   162 000001CC 48B900000000000028-         mov     rcx, float64(12.0)  ; rcx = 12
+   162 000001D5 40                 
+   163 000001D6 66480F6EF1                  movq    xmm6, rcx           ; xmm6 = 12
+   164 000001DB F2480F2AE8                  cvtsi2sd    xmm5, rax       ; xmm5 = width
+   165 000001E0 F20F5EEE                    divsd   xmm5, xmm6          ; xmm5 = width/12
+   166 000001E4 48BA295C8FC2F528DC-         mov     rdx, float64(0.44)  ; rdx = 0.44
+   166 000001ED 3F                 
+   167 000001EE 66480F6EE2                  movq    xmm4, rdx           ; xmm4 = 0.44
+   168 000001F3 F20F59E5                    mulsd   xmm4, xmm5          ; xmm4 = 0.44 * width/12
+   169 000001F7 F20F58DC                    addsd   xmm3, xmm4          ; xmm3 = x*0.26 + y*0.24 + 0.44 * width/12
+   170                                  
+   171 000001FB E98D000000                  jmp     set_new_coords
+   172                                  
+   173                                  func3:
+   174 00000200 48B89A9999999999C9-         mov     rax, float64(0.20)  ; rax = 0.20
+   174 00000209 3F                 
+   175 0000020A 66480F6ED0                  movq    xmm2, rax           ; xmm2 = 0.20
+   176 0000020F F20F59D0                    mulsd   xmm2, xmm0          ; xmm2 = x*0.20
+   177 00000213 48B8A4703D0AD7A3D0-         mov     rax, float64(-0.26) ; rax = -0.26
+   177 0000021C BF                 
+   178 0000021D 66480F6EE0                  movq    xmm4, rax           ; xmm4 = -0.26
+   179 00000222 F20F59E1                    mulsd   xmm4, xmm1          ; xmm4 = y*-0.26
+   180 00000226 F20F58D4                    addsd   xmm2, xmm4          ; xmm2 = x*0.20 + y*-0.26
+   181                                  
+   182 0000022A 48B8713D0AD7A370CD-         mov     rax, float64(0.23)  ; rax = 0.23
+   182 00000233 3F                 
+   183 00000234 66480F6ED8                  movq    xmm3, rax           ; xmm3 = 0.23
+   184 00000239 F20F59D8                    mulsd   xmm3, xmm0          ; xmm3 = x*0.23
+   185 0000023D 48B8295C8FC2F528CC-         mov     rax, float64(0.22)  ; rax = 0.22
+   185 00000246 3F                 
+   186 00000247 66480F6EE0                  movq    xmm4, rax           ; xmm4 = 0.22
+   187 0000024C F20F59E1                    mulsd   xmm4, xmm1          ; xmm4 = y*0.22
+   188 00000250 F20F58DC                    addsd   xmm3, xmm4          ; xmm3 = x*0.23 + y*0.22
+   189 00000254 488B5DF8                    mov     rbx, [rbp-8]        ; rax = image_header
+   190 00000258 4831C0                      xor     rax, rax            ; rax = 0
+   191 0000025B 8B4312                      mov     eax, [rbx+18]       ; eax = width
+   192 0000025E 48B900000000000028-         mov     rcx, float64(12.0)  ; rcx = 12
+   192 00000267 40                 
+   193 00000268 66480F6EF1                  movq    xmm6, rcx           ; xmm6 = 12
+   194 0000026D F2480F2AE8                  cvtsi2sd    xmm5, rax       ; xmm5 = width
+   195 00000272 F20F5EEE                    divsd   xmm5, xmm6          ; xmm5 = width/12
+   196 00000276 48BA9A9999999999F9-         mov     rdx, float64(1.6)   ; rdx = 1.6
+   196 0000027F 3F                 
+   197 00000280 66480F6EE2                  movq    xmm4, rdx           ; xmm4 = 1.6
+   198 00000285 F20F59E5                    mulsd   xmm4, xmm5          ; xmm4 = 1.6 * width/12
+   199 00000289 F20F58DC                    addsd   xmm3, xmm4          ; xmm3 = x*0.23 + y*0.22 + 1.6 * width/12
+   200                                  
+   201                                  set_new_coords:
+   202                                  ; sets new coords in int to rdi and rsi
+   203                                  ; arguments: xmm2: new_x, xmm3: new_y
+   204 0000028D F2480F2DFA                  cvtsd2si    rdi, xmm2   ; rdi = new_x
+   205 00000292 F2480F2DF3                  cvtsd2si    rsi, xmm3   ; rsi = new_y
+   206                                  
+   207                                  check_if_end:
+   208                                  ; decrement and check if counter == 0
+   209                                  
+   210 00000297 48FF4DE0                    dec     qword [rbp-32]
+   211 0000029B 488B45E0                    mov     rax, [rbp-32]
+   212 0000029F 4883F800                    cmp     rax, 0
+   213 000002A3 0F8581FDFFFF                jnz     color
+   214                                  
+   215                                  epilog:
+   216                                  ; end of the main function
+   217                                  
+   218 000002A9 4889EC                  	mov		rsp, rbp
+   219 000002AC 5D                      	pop		rbp
+   220 000002AD C3                      	ret
